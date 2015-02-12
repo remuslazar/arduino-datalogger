@@ -15,7 +15,7 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 #define BRIGHTNESS_SAMPLE_RATE 1
 
 // # samples for smoothening the raw input value from sensor
-#define BRIGHTNESS_SAMPLES_NUM 8
+#define BRIGHTNESS_SAMPLES_NUM 5
 
 // seconds between two datapoints (saved in EEPROM)
 #define DATAPOINT_PERIOD 120
@@ -35,14 +35,15 @@ void static inline processLightSensor() {
 	const float smoothSamplesNum = BRIGHTNESS_SAMPLES_NUM;
 
 	static uint32_t triggerTimestamp = 0;
-	static double smoothedVal = 500; // start with some middle default value
+	static float smoothedVal = -1;
 
 	if (millis() > triggerTimestamp) {
 		sensorVal = analogRead(SENSOR_PIN);
-		smoothedVal += (double)(sensorVal-smoothedVal) / smoothSamplesNum;
+		if (smoothedVal == -1) smoothedVal = sensorVal;
+		else smoothedVal += ((float)sensorVal-smoothedVal) / smoothSamplesNum;
 
-		// calculate the brightness value from 0..100
-		uint8_t brightnessValue = map(smoothedVal,0,1023,0,254); // 255 means "no value"
+		// calculate the brightness value from 0..253
+		uint8_t brightnessValue = (uint8_t)(smoothedVal * 253 / 1023 + .5);
 		brightness = brightnessValue;
 
 		triggerTimestamp = millis() + sampleRate;
@@ -234,11 +235,15 @@ void static inline processLcd() {
 			// put the live data on the right place
 
 			// LCD line 0
-			lcd.setCursor(5,0);
-			lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
-			                    String((float)eeprom_addr*100/EEPROM_SIZE,0) +
-			                    String(F("%)")
-			                           ), 16-5-1)); // right outmost char left for the animation
+			static int last_eeprom_addr = 0;
+			if (last_eeprom_addr != eeprom_addr) {
+				lcd.setCursor(5,0);
+				lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
+				                    String((int)(eeprom_addr*100/EEPROM_SIZE+.5)) +
+				                    String(F("%)")
+				                           ), 16-5-1)); // right outmost char left for the animation
+				last_eeprom_addr = eeprom_addr;
+			}
 			// LCD line 1
 			lcd.setCursor(3,1);
 			lcd.print(stringPad(String(sensorVal),4));
@@ -256,9 +261,9 @@ void static inline processLcd() {
 void static inline lcdProcessActiveStateIndicator() {
 
 	static uint32_t triggerTimestamp = 0;
-	const uint32_t refreshPeriod = 350; // in ms
+	const uint32_t refreshPeriod = 250; // in ms
 	static byte glyph = 0;
-	const byte glyph_count = 3;
+	const byte glyph_count = 8;
 
 	if (millis() > triggerTimestamp) {
 		lcd.setCursor(15,0); // last character on 1. line
@@ -275,37 +280,19 @@ void static inline lcdProcessActiveStateIndicator() {
 void static setupLcd() {
 	lcd.begin(16, 2);
 	// setup some glyph (5x7) for the "logger is active" animation
-	byte specialChars[][8] = {
-		{
-			B00000,
-			B00000,
-			B00000,
-			B00100,
-			B00000,
-			B00000,
-			B00000,
-		},
-		{
-			B00000,
-			B00000,
-			B00100,
-			B01010,
-			B00100,
-			B00000,
-			B00000,
-		},
-		{
-			B00000,
-			B00100,
-			B01010,
-			B10001,
-			B01010,
-			B00100,
-			B00000,
-		}
+	byte glyph[8] = {
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
+		0x00,
 	};
-	for (byte i=0; i<sizeof(specialChars); i++) {
-		lcd.createChar(i, specialChars[i]);
+	for (byte i=0; i<7; i++) {
+		glyph[7-i] = 0x1f;
+		lcd.createChar(i, glyph);
 	}
 }
 
