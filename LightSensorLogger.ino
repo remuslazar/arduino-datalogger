@@ -235,7 +235,7 @@ void static inline processLcd() {
 			// put the live data on the right place
 
 			// LCD line 0
-			static int last_eeprom_addr = 0;
+			static int last_eeprom_addr = -1;
 			if (last_eeprom_addr != eeprom_addr) {
 				lcd.setCursor(5,0);
 				lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
