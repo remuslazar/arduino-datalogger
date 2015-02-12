@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <EEPROM.h>
+#include "version.h"
 
 #define SENSOR_PIN A0
 
@@ -115,6 +116,8 @@ get:    get datalog"));
 	Serial.println(String(F("Datapoints count: ")) + String(eeprom_addr));
 	Serial.print(F("brightness value: "));Serial.println(brightness);
 	Serial.println(String(F("uptime: ")) + String(millis()));
+	// call "make version" to update VERSION
+	Serial.println(String(F("fw-version: ")) + String(F(VERSION)));
 
  end:
 	Serial.println();
