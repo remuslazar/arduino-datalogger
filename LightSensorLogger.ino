@@ -142,6 +142,10 @@ void static inline processSerial() {
 
 	if (!isInitialized) {
 		// show help screen after initial connect
+		Serial.println(F("\n\
+Arduino Datalogger Serial Console\n\
+=================================\n"));
+
 		processCommand(String(F("help")));
 
 		// disable the datalogger
