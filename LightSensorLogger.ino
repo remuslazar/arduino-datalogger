@@ -290,7 +290,7 @@ void static setupLcd() {
 		0x00,
 		0x00,
 	};
-	for (byte i=0; i<7; i++) {
+	for (byte i=0; i<8; i++) {
 		glyph[7-i] = 0x1f;
 		lcd.createChar(i, glyph);
 	}
