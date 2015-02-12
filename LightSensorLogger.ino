@@ -114,7 +114,6 @@ get:    get datalog"));
 	Serial.print(F("brightness value: "));Serial.println(brightness);
 	Serial.println(String(F("uptime: ")) + String(millis()));
 	// call "make version" to update VERSION
-	Serial.println(String(F("FW-version: ")) + String(F(VERSION)));
 
  end:
 	Serial.println();
@@ -145,6 +144,7 @@ void static inline processSerial() {
 		Serial.println(F("\n\
 Arduino Datalogger Serial Console\n\
 =================================\n"));
+		Serial.println(String(F("Firmware Version: ")) + String(F(VERSION)) + String('\n') );
 
 		processCommand(String(F("help")));
 
