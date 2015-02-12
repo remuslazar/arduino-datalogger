@@ -175,6 +175,14 @@ Arduino Datalogger Serial Console\n\
 	}
 }
 
+// pad the String (in place) with spaces up to the specified length
+String static stringPad(String str, int len) {
+	byte tail = len - str.length();
+	if (tail < 0) return str.substring(0,len);
+	while (tail-- > 0) str += ' ';
+	return str;
+}
+
 /**
  * LCD Display state machine
  *
@@ -227,25 +235,82 @@ void static inline processLcd() {
 
 			// LCD line 0
 			lcd.setCursor(5,0);
-			lcd.print(String(eeprom_addr) + String(F(" (")) +
-			          String((float)eeprom_addr*100/EEPROM_SIZE,1) + String(F("%)    ")));
-
+			lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
+			                    String((float)eeprom_addr*100/EEPROM_SIZE,0) +
+			                    String(F("%)")
+			                           ), 16-5-1)); // right outmost char left for the animation
 			// LCD line 1
 			lcd.setCursor(3,1);
-			lcd.print(sensorVal);
+			lcd.print(stringPad(String(sensorVal),4));
 			lcd.setCursor(10,1);
-			lcd.print(brightness);
-			lcd.print(F("    "));
+			lcd.print(stringPad(String(brightness),3));
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
+		lcdProcessActiveStateIndicator();
 		break;
 	}
+}
 
+// do a nice animation while the datalogger is running
+void static inline lcdProcessActiveStateIndicator() {
+
+	static uint32_t triggerTimestamp = 0;
+	const uint32_t refreshPeriod = 350; // in ms
+	static byte glyph = 0;
+	const byte glyph_count = 3;
+
+	if (millis() > triggerTimestamp) {
+		lcd.setCursor(15,0); // last character on 1. line
+		if (dataloggerActive) {
+			lcd.write(glyph < glyph_count ? glyph : (glyph_count-1)*2-glyph);
+			glyph = ++glyph % ((glyph_count-1)*2);
+		} else {
+			lcd.print(' ');
+		}
+		triggerTimestamp = millis() + refreshPeriod;
+	}
+}
+
+void static setupLcd() {
+	lcd.begin(16, 2);
+	// setup some glyph (5x7) for the "logger is active" animation
+	byte specialChars[][8] = {
+		{
+			B00000,
+			B00000,
+			B00000,
+			B00100,
+			B00000,
+			B00000,
+			B00000,
+		},
+		{
+			B00000,
+			B00000,
+			B00100,
+			B01010,
+			B00100,
+			B00000,
+			B00000,
+		},
+		{
+			B00000,
+			B00100,
+			B01010,
+			B10001,
+			B01010,
+			B00100,
+			B00000,
+		}
+	};
+	for (byte i=0; i<sizeof(specialChars); i++) {
+		lcd.createChar(i, specialChars[i]);
+	}
 }
 
 void setup() {
-	lcd.begin(16, 2);
+	setupLcd();
 	Serial.begin(115200);
 	setupDatalog();
 }
