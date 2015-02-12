@@ -2,9 +2,10 @@
 #include "version.h"
 #include <LiquidCrystal.h>
 
-// initialize the library with the numbers of the interface pins
+// wire-up the LCD library accordingly
 LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
+// LDR sensor input pin
 #define SENSOR_PIN A0
 
 // EEPROM size
@@ -174,6 +175,13 @@ Arduino Datalogger Serial Console\n\
 	}
 }
 
+/**
+ * LCD Display state machine
+ *
+ * Display current status and update it
+ * periodically
+ */
+
 void static inline processLcd() {
 
 	typedef enum {
@@ -185,7 +193,7 @@ void static inline processLcd() {
 	static lcd_state_t state = INIT;
 	const uint32_t startupTimeout = 5 * 1000;
 	static uint32_t triggerTimestamp = 0;
-	const uint32_t refreshPeriod = 1 * 1000; // ms
+	const uint32_t refreshPeriod = 1 * 1000; // in ms
 
 	switch(state) {
 	case INIT:
@@ -196,26 +204,33 @@ void static inline processLcd() {
 		lcd.print(F(VERSION));
 		state = STARTUP;
 		break;
+
 	case STARTUP:
 		if (millis() > startupTimeout) {
-			// init status screen
+			// init status screen, so we don't always repaint static
+			// data in the UPDATE_LOOP
 			lcd.setCursor(0,0);
-			//           0123456789012345
+
+			//          |0123456789012345|
 			lcd.print(F("Mem: -          "));
 			lcd.setCursor(0,1);
-			//           0123456789012345
-			lcd.print(F("Vd=?    b=?      "));
+			//          |0123456789012345|
+			lcd.print(F("Vd=?    b=?     "));
 			state = UPDATE_LOOP;
 		}
 		break;
+
 	case UPDATE_LOOP:
 		if (millis() > triggerTimestamp) {
-			// lcd line 0
+
+			// put the live data on the right place
+
+			// LCD line 0
 			lcd.setCursor(5,0);
 			lcd.print(String(eeprom_addr) + String(F(" (")) +
 			          String((float)eeprom_addr*100/EEPROM_SIZE,1) + String(F("%)    ")));
 
-			// lcd line 1
+			// LCD line 1
 			lcd.setCursor(3,1);
 			lcd.print(sensorVal);
 			lcd.setCursor(10,1);
