@@ -20,6 +20,9 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 // seconds between two datapoints (saved in EEPROM)
 #define DATAPOINT_PERIOD 120
 
+#define LCD_GLYPH_PLAY 5
+#define LCD_GLYPH_PAUSE 6
+
 static int brightness = -1; // current brightness value (0..255)
 static int eeprom_addr = 0;
 static bool dataloggerActive = true;
@@ -244,6 +247,10 @@ void static inline processLcd() {
 				                           ), 16-5-1)); // right outmost char left for the animation
 				last_eeprom_addr = eeprom_addr;
 			}
+			lcd.setCursor(15,0);
+			// write a "play" glyph if the datalogger is active, else a "pause" glyph
+			lcd.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
+
 			// LCD line 1
 			lcd.setCursor(3,1);
 			lcd.print(stringPad(String(sensorVal),4));
@@ -252,48 +259,44 @@ void static inline processLcd() {
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
-		lcdProcessActiveStateIndicator();
 		break;
-	}
-}
-
-// do a nice animation while the datalogger is running
-void static inline lcdProcessActiveStateIndicator() {
-
-	static uint32_t triggerTimestamp = 0;
-	const uint32_t refreshPeriod = 250; // in ms
-	static byte glyph = 0;
-	const byte glyph_count = 8;
-
-	if (millis() > triggerTimestamp) {
-		lcd.setCursor(15,0); // last character on 1. line
-		if (dataloggerActive) {
-			lcd.write(glyph < glyph_count ? glyph : (glyph_count-1)*2-glyph);
-			glyph = ++glyph % ((glyph_count-1)*2);
-		} else {
-			lcd.print(' ');
-		}
-		triggerTimestamp = millis() + refreshPeriod;
 	}
 }
 
 void static setupLcd() {
 	lcd.begin(16, 2);
-	// setup some glyph (5x7) for the "logger is active" animation
-	byte glyph[8] = {
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-		0x00,
-	};
-	for (byte i=0; i<8; i++) {
-		glyph[7-i] = 0x1f;
-		lcd.createChar(i, glyph);
+	// setup some glyph (5x7) for the vu-meter display
+	byte buf[8];
+	byte c = 0x00;
+	for (byte i=0; i<5; i++) {
+		c |= (1 << i);
+		memset(buf,c,sizeof(buf));
+		lcd.createChar(i, buf);
 	}
+	byte glyph[2][8] = {
+		{ // play
+			B01000,
+			B01100,
+			B01110,
+			B01111,
+			B01110,
+			B01100,
+			B01000,
+		}, { // pause
+			B11011,
+			B11011,
+			B11011,
+			B11011,
+			B11011,
+			B11011,
+			B11011,
+			B11011,
+		}
+	};
+	lcd.createChar(LCD_GLYPH_PLAY, glyph[0]);
+	lcd.createChar(LCD_GLYPH_PAUSE, glyph[1]);
+	// one glyph left
+
 }
 
 void setup() {
