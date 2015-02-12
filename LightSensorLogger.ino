@@ -1,5 +1,9 @@
 #include <EEPROM.h>
 #include "version.h"
+#include <LiquidCrystal.h>
+
+// initialize the library with the numbers of the interface pins
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 
 #define SENSOR_PIN A0
 
@@ -7,10 +11,10 @@
 #define EEPROM_SIZE 1024
 
 // sample rate (in seconds) for the ldr (light sensor)
-#define BRIGHTNESS_SAMPLE_RATE 5
+#define BRIGHTNESS_SAMPLE_RATE 1
 
 // # samples for smoothening the raw input value from sensor
-#define BRIGHTNESS_SAMPLES_NUM 5
+#define BRIGHTNESS_SAMPLES_NUM 8
 
 // seconds between two datapoints (saved in EEPROM)
 #define DATAPOINT_PERIOD 120
@@ -18,6 +22,7 @@
 static int brightness = -1; // current brightness value (0..255)
 static int eeprom_addr = 0;
 static bool dataloggerActive = true;
+static int sensorVal = -1;
 
 /**
  * Process the data from the LDR sensor and save the smoothed value in
@@ -32,7 +37,7 @@ void static inline processLightSensor() {
 	static double smoothedVal = 500; // start with some middle default value
 
 	if (millis() > triggerTimestamp) {
-		int sensorVal = analogRead(SENSOR_PIN);
+		sensorVal = analogRead(SENSOR_PIN);
 		smoothedVal += (double)(sensorVal-smoothedVal) / smoothSamplesNum;
 
 		// calculate the brightness value from 0..100
@@ -128,14 +133,14 @@ get:    get datalog"));
 
 void static inline processSerial() {
 
-	enum serialState {
+	typedef enum {
 		INIT,
 		WAIT_FOR_CMD
-	};
+	} serial_state_t;
 
 	const short LF = 10; // ASCII linefeed
 	static bool isInitialized = false;
-	static uint8_t state = INIT;
+	static serial_state_t state = INIT;
 
 	if (!Serial) return;
 
@@ -169,7 +174,63 @@ Arduino Datalogger Serial Console\n\
 	}
 }
 
+void static inline processLcd() {
+
+	typedef enum {
+		INIT,
+		STARTUP,
+		UPDATE_LOOP
+	} lcd_state_t;
+
+	static lcd_state_t state = INIT;
+	const uint32_t startupTimeout = 5 * 1000;
+	static uint32_t triggerTimestamp = 0;
+	const uint32_t refreshPeriod = 1 * 1000; // ms
+
+	switch(state) {
+	case INIT:
+		lcd.setCursor(0,0);
+		lcd.print(F("Datalogger"));
+		lcd.setCursor(0,1);
+		lcd.print(F("Ver: "));
+		lcd.print(F(VERSION));
+		state = STARTUP;
+		break;
+	case STARTUP:
+		if (millis() > startupTimeout) {
+			// init status screen
+			lcd.setCursor(0,0);
+			//           0123456789012345
+			lcd.print(F("Mem: -          "));
+			lcd.setCursor(0,1);
+			//           0123456789012345
+			lcd.print(F("Vd=?    b=?      "));
+			state = UPDATE_LOOP;
+		}
+		break;
+	case UPDATE_LOOP:
+		if (millis() > triggerTimestamp) {
+			// lcd line 0
+			lcd.setCursor(5,0);
+			lcd.print(String(eeprom_addr) + String(F(" (")) +
+			          String((float)eeprom_addr*100/EEPROM_SIZE,1) + String(F("%)    ")));
+
+			// lcd line 1
+			lcd.setCursor(3,1);
+			lcd.print(sensorVal);
+			lcd.setCursor(10,1);
+			lcd.print(brightness);
+			lcd.print(F("    "));
+
+			triggerTimestamp = millis() + refreshPeriod;
+		}
+		break;
+	}
+
+}
+
 void setup() {
+	lcd.begin(16, 2);
 	Serial.begin(115200);
 	setupDatalog();
 }
@@ -178,4 +239,5 @@ void loop() {
 	processLightSensor();
 	processDatalog();
 	processSerial();
+	processLcd();
 }
