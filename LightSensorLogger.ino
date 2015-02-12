@@ -1,4 +1,3 @@
-#include <Arduino.h>
 #include <EEPROM.h>
 #include "version.h"
 
@@ -70,8 +69,6 @@ void static inline processDatalog() {
 	}
 }
 
-static const short LF = 10; // ASCII linefeed
-
 void static inline processCommand(String cmd) {
 
 	if (cmd == String(F("help"))) {
@@ -117,7 +114,7 @@ get:    get datalog"));
 	Serial.print(F("brightness value: "));Serial.println(brightness);
 	Serial.println(String(F("uptime: ")) + String(millis()));
 	// call "make version" to update VERSION
-	Serial.println(String(F("fw-version: ")) + String(F(VERSION)));
+	Serial.println(String(F("FW-version: ")) + String(F(VERSION)));
 
  end:
 	Serial.println();
@@ -137,6 +134,7 @@ void static inline processSerial() {
 		WAIT_FOR_CMD
 	};
 
+	const short LF = 10; // ASCII linefeed
 	static bool isInitialized = false;
 	static uint8_t state = INIT;
 
