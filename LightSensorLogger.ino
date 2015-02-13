@@ -181,7 +181,7 @@ Arduino Datalogger Serial Console\n\
 
 // pad the String (in place) with spaces up to the specified length
 String static stringPad(String str, int len) {
-	byte tail = len - str.length();
+	int tail = len - str.length();
 	if (tail < 0) return str.substring(0,len);
 	while (tail-- > 0) str += ' ';
 	return str;
