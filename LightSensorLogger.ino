@@ -49,7 +49,7 @@ void static inline processLightSensor() {
 		uint8_t brightnessValue = (uint8_t)(smoothedVal * 253 / 1023 + .5);
 		brightness = brightnessValue;
 
-		triggerTimestamp = millis() + sampleRate;
+		triggerTimestamp += sampleRate;
 	}
 }
 
@@ -69,13 +69,17 @@ void static inline processDatalog() {
 	static uint32_t triggerTimestamp = 10000;
 	const uint32_t period = DATAPOINT_PERIOD;
 
-	if (!dataloggerActive) return;
-
 	uint32_t ts = millis();
+	if (!dataloggerActive) {
+		triggerTimestamp = ts; // start on next tick when
+							   // dataloggerActive == true
+		return;
+	}
+
 	if (ts > triggerTimestamp) {
 		EEPROM.write(eeprom_addr, brightness);
 		if (++eeprom_addr > 1023) dataloggerActive = false; // no space left on EEPROM
-		triggerTimestamp = ts + period * 1000;
+		triggerTimestamp += period * 1000;
 	}
 }
 
