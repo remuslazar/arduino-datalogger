@@ -37,4 +37,4 @@ the forward current rated at max 30mA.
 
 ### The resistor value
 
-R = (5V-3.2V) / 30mA = 60 Ohm. We're choosing
+R = (5V-3.2V) / 30mA = 60 Ohm.
