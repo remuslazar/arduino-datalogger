@@ -2,9 +2,6 @@
 #include "version.h"
 #include <LiquidCrystal.h>
 
-// wire-up the LCD library accordingly
-LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
-
 // LDR sensor input pin
 #define SENSOR_PIN A0
 
@@ -20,9 +17,6 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 // seconds between two datapoints (saved in EEPROM)
 #define DATAPOINT_PERIOD 120
 
-#define LCD_GLYPH_PLAY 5
-#define LCD_GLYPH_PAUSE 6
-
 static int brightness = -1; // current brightness value (0..255)
 
 // the address of the next free slot in the data buffer. If the memory
@@ -31,6 +25,13 @@ static int brightness = -1; // current brightness value (0..255)
 static int eeprom_addr = 0;
 static bool dataloggerActive = true;
 static int sensorVal = -1;
+
+#define USE_LCD
+
+#ifdef USE_LCD
+// wire-up the LCD library accordingly
+LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+#endif
 
 /**
  * Process the data from the LDR sensor and save the smoothed value in
@@ -201,6 +202,11 @@ String static stringPad(String str, int len) {
 	return str;
 }
 
+#ifdef USE_LCD
+
+#define LCD_GLYPH_PLAY 5
+#define LCD_GLYPH_PAUSE 6
+
 /**
  * LCD Display state machine
  *
@@ -312,9 +318,12 @@ void static setupLcd() {
 	// one glyph left
 
 }
+#endif
 
 void setup() {
+#ifdef USE_LCD
 	setupLcd();
+#endif
 	Serial.begin(115200);
 	setupDatalog();
 }
@@ -323,5 +332,7 @@ void loop() {
 	processLightSensor();
 	processDatalog();
 	processSerial();
+#ifdef USE_LCD
 	processLcd();
+#endif
 }
