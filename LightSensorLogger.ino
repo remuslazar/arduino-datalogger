@@ -67,7 +67,7 @@ void static inline setupDatalog() {
 void static inline processDatalog() {
 	// begin with the data logging 10 seconds after power-on
 	static uint32_t triggerTimestamp = 10000;
-	const uint32_t period = DATAPOINT_PERIOD;
+	const uint32_t period = DATAPOINT_PERIOD * 1000;
 
 	uint32_t ts = millis();
 	if (!dataloggerActive) {
@@ -79,7 +79,7 @@ void static inline processDatalog() {
 	if (ts > triggerTimestamp) {
 		EEPROM.write(eeprom_addr, brightness);
 		if (++eeprom_addr > 1023) dataloggerActive = false; // no space left on EEPROM
-		triggerTimestamp += period * 1000;
+		triggerTimestamp += period;
 	}
 }
 
