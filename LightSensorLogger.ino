@@ -24,6 +24,10 @@ LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
 #define LCD_GLYPH_PAUSE 6
 
 static int brightness = -1; // current brightness value (0..255)
+
+// the address of the next free slot in the data buffer. If the memory
+// is full, this will be one = EEPROM_SIZE, which is okay; we do take
+// care of that edge case later in our methods.
 static int eeprom_addr = 0;
 static bool dataloggerActive = true;
 static int sensorVal = -1;
@@ -55,13 +59,14 @@ void static inline processLightSensor() {
 
 // search the tail of the datalog buffer (don't overwrite existing
 // data)
+
 void static inline setupDatalog() {
-	int a;
-	for (a = 0; a < EEPROM_SIZE; a++) {
-		byte val = EEPROM.read(a);
-		if (val == 0xff) break; // 255 => "no value"
+	for (eeprom_addr = 0; eeprom_addr < EEPROM_SIZE; eeprom_addr++) {
+		byte val = EEPROM.read(eeprom_addr);
+		if (val == 0xff) return; // 255 => "no value"
 	}
-	eeprom_addr = a;
+	// memory full
+	eeprom_addr++; // = 1024
 }
 
 void static inline processDatalog() {
@@ -71,15 +76,20 @@ void static inline processDatalog() {
 
 	uint32_t ts = millis();
 	if (!dataloggerActive) {
-		triggerTimestamp = ts; // start on next tick when
-							   // dataloggerActive == true
+		triggerTimestamp = ts;
+		// start data logging on next tick when dataloggerActive > true
 		return;
 	}
 
 	if (ts > triggerTimestamp) {
-		EEPROM.write(eeprom_addr, brightness);
-		if (++eeprom_addr > 1023) dataloggerActive = false; // no space left on EEPROM
-		triggerTimestamp += period;
+		if (eeprom_addr < EEPROM_SIZE) {
+			// make sure we don't go beyond the bounds
+			EEPROM.write(eeprom_addr++, brightness);
+			triggerTimestamp += period;
+		} else {
+			// memory full, stop the datalogger
+			dataloggerActive = false;
+		}
 	}
 }
 
