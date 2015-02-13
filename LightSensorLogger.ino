@@ -242,7 +242,7 @@ void static inline processLcd() {
 			if (last_eeprom_addr != eeprom_addr) {
 				lcd.setCursor(5,0);
 				lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
-				                    String((int)(eeprom_addr*100/EEPROM_SIZE+.5)) +
+				                    String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
 				                    String(F("%)")
 				                           ), 16-5-1)); // right outmost char left for the animation
 				last_eeprom_addr = eeprom_addr;
