@@ -32,11 +32,15 @@ static int sensorVal = -1;
 #ifdef USE_LCD
 // wire-up the LCD library accordingly
 LiquidCrystal LCD(12, 11, 5, 4, 3, 2);
-static FILE lcdout = {0}; // LCD FILE structure
-// LCD character writer
-static int lcd_putchar(char ch, FILE* stream) {
-    LCD.write(ch);
-    return (0);
+void LCDprintf(const __FlashStringHelper *format, ...) {
+	char buf[17]; // 16 chars (one line) buffer for vsnprintf, incl. the trailing zero
+	va_list ap;
+	va_start(ap, format);
+	vsnprintf_P(buf, sizeof(buf), (const char *)format, ap); // progmem for AVR
+	for(char *p = &buf[0]; *p; p++) {
+		LCD.write(*p);
+	}
+	va_end(ap);
 }
 #endif
 
@@ -142,7 +146,7 @@ get:    get datalog"));
  status:
 	Serial.println(String(F("Datalogger is ")) + (dataloggerActive ? String(F("active")) : String(F("stopped"))));
 	Serial.println(String(F("Datapoints count: ")) + String(eeprom_addr));
-	Serial.print(F("brightness value: "));Serial.println(brightness);
+	Serial.println(String(F("brightness value: ")) + String(brightness));
 	Serial.println(String(F("uptime: ")) + getTime());
 	// call "make version" to update VERSION
 
@@ -213,8 +217,6 @@ Arduino Datalogger Serial Console\n\
  */
 
 void static inline processLcd() {
-	stdout = &lcdout;
-
 	typedef enum {
 		INIT,
 		STARTUP,
@@ -222,16 +224,16 @@ void static inline processLcd() {
 	} lcd_state_t;
 
 	static lcd_state_t state = INIT;
-	const uint32_t startupTimeout = 5 * 1000;
+	const uint32_t startupTimeout = 5 * 1000L;
 	static uint32_t triggerTimestamp = 0;
-	const uint32_t refreshPeriod = 1 * 1000; // in ms
+	const uint32_t refreshPeriod = 1 * 1000L; // in ms
 
 	switch(state) {
 	case INIT:
 		LCD.setCursor(0,0);
-		printf_P(PSTR("Datalogger"));
+		LCD.print(F("Datalogger"));
 		LCD.setCursor(0,1);
-		printf_P(PSTR( "Ver: " VERSION ));
+		LCD.print(F( "Ver: " VERSION ));
 		state = STARTUP;
 		break;
 
@@ -242,7 +244,8 @@ void static inline processLcd() {
 			// data in the UPDATE_LOOP
 			LCD.setCursor(0,1);
 			//          |0123456789012345|
-			printf_P(PSTR("Up:"));
+			//printf_P(PSTR("Up:"));
+			LCD.print(F("Up:"));
 			state = UPDATE_LOOP;
 		}
 		break;
@@ -258,24 +261,24 @@ void static inline processLcd() {
 
 			// 1. row: display Vd raw value, brightness and memory usage
 
-			LCD.setCursor(0,0);printf_P(PSTR("%-4d %-3d"), sensorVal, brightness);
+			LCD.setCursor(0,0);LCDprintf(F("%-4d %-3d"), sensorVal, brightness);
 
 			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
 			if (last_eeprom_addr != eeprom_addr) {
-				printf_P(PSTR(" %3d%%"),(int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5));
+				LCDprintf(F(" %3d%%"),(int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5));
 				last_eeprom_addr = eeprom_addr;
 			}
 
 			LCD.setCursor(15,0); // rightmost char
 			// write a "play" glyph if the datalogger is active, else a "pause" glyph
-			putchar(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
+			LCD.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
 
 			// 2. row: display the uptime in seconds
 
 			// setup the offsets and lengths for the various values as constants
 			LCD.setCursor(4,1);
-			printf_P(PSTR("%-9s"), getTime().c_str());
+			LCDprintf(F("%-9s"), getTime().c_str());
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
@@ -300,12 +303,10 @@ String getTime() {
 	ret += s;
 	ret += 's';
 	return ret;
-	}
+}
 
 void static setupLcd() {
 	LCD.begin(16, 2);
-	// fill in the LCD FILE structure
-	fdev_setup_stream (&lcdout, lcd_putchar, NULL, _FDEV_SETUP_WRITE);
 
 #ifdef LCD_BARS
 	// setup some glyph (5x7) for the vu-meter display
