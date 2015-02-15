@@ -1,6 +1,7 @@
 #include <EEPROM.h>
 #include "version.h"
 #include <LiquidCrystal.h>
+#include <avr/pgmspace.h>
 
 // LDR sensor input pin
 #define SENSOR_PIN A0
@@ -31,6 +32,12 @@ static int sensorVal = -1;
 #ifdef USE_LCD
 // wire-up the LCD library accordingly
 LiquidCrystal LCD(12, 11, 5, 4, 3, 2);
+static FILE lcdout = {0}; // LCD FILE structure
+// LCD character writer
+static int lcd_putchar(char ch, FILE* stream) {
+    LCD.write(ch);
+    return (0);
+}
 #endif
 
 /**
@@ -193,15 +200,6 @@ Arduino Datalogger Serial Console\n\
 	}
 }
 
-// pad the String (in place) with spaces up to the specified length
-// !this implementation will modify the original String instance
-String static stringPad(String str, int len) {
-	int8_t tail = len - str.length(); // our strings are <128 chars
-	if (tail < 0) return str.substring(0,len);
-	while (tail-- > 0) str += ' ';
-	return str;
-}
-
 #ifdef USE_LCD
 
 #define LCD_GLYPH_PLAY 5
@@ -215,6 +213,7 @@ String static stringPad(String str, int len) {
  */
 
 void static inline processLcd() {
+	stdout = &lcdout;
 
 	typedef enum {
 		INIT,
@@ -230,10 +229,9 @@ void static inline processLcd() {
 	switch(state) {
 	case INIT:
 		LCD.setCursor(0,0);
-		LCD.print(F("Datalogger"));
+		printf_P(PSTR("Datalogger"));
 		LCD.setCursor(0,1);
-		LCD.print(F("Ver: "));
-		LCD.print(F(VERSION));
+		printf_P(PSTR( "Ver: " VERSION ));
 		state = STARTUP;
 		break;
 
@@ -244,7 +242,7 @@ void static inline processLcd() {
 			// data in the UPDATE_LOOP
 			LCD.setCursor(0,1);
 			//          |0123456789012345|
-			LCD.print(F("Up:"));
+			printf_P(PSTR("Up:"));
 			state = UPDATE_LOOP;
 		}
 		break;
@@ -260,33 +258,24 @@ void static inline processLcd() {
 
 			// 1. row: display Vd raw value, brightness and memory usage
 
-			// setup the offsets and lengths for the various values as constants
-			const byte offset1[] = { 0, 5, 10, 15 };
-			const byte length1[] = { 4, 3,  4,  1 };
-
-			LCD.setCursor(offset1[0], 0);LCD.print(stringPad(String(sensorVal ),length1[0]));
-			LCD.setCursor(offset1[1], 0);LCD.print(stringPad(String(brightness),length1[1]));
+			LCD.setCursor(0,0);printf_P(PSTR("%4d %3d"), sensorVal, brightness);
 
 			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
 			if (last_eeprom_addr != eeprom_addr) {
-				LCD.setCursor(offset1[2],0);
-				LCD.print(stringPad(String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
-				                    String('%'), length1[2])); // right outmost char left for the animation
+				printf_P(PSTR(" %3d%%"),(int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5));
 				last_eeprom_addr = eeprom_addr;
 			}
 
-			LCD.setCursor(offset1[3],0); // rightmost char
+			LCD.setCursor(15,0); // rightmost char
 			// write a "play" glyph if the datalogger is active, else a "pause" glyph
-			LCD.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
+			putchar(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
 
 			// 2. row: display the uptime in seconds
 
 			// setup the offsets and lengths for the various values as constants
-			const byte offset2[] = { 4 };
-			const byte length2[] = { 9 }; // maximum width of a time string is 9 (xxhxxmxxs)
-
-			LCD.setCursor(offset2[0],1); LCD.print(stringPad(getTime(),length2[0]));
+			LCD.setCursor(4,1);
+			printf_P(PSTR("%-9s"), getTime().c_str());
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
@@ -315,6 +304,9 @@ String getTime() {
 
 void static setupLcd() {
 	LCD.begin(16, 2);
+	// fill in the LCD FILE structure
+	fdev_setup_stream (&lcdout, lcd_putchar, NULL, _FDEV_SETUP_WRITE);
+
 #ifdef LCD_BARS
 	// setup some glyph (5x7) for the vu-meter display
 	byte buf[8];
