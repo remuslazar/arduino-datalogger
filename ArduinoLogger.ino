@@ -258,7 +258,7 @@ void static inline processLcd() {
 
 			// 1. row: display Vd raw value, brightness and memory usage
 
-			LCD.setCursor(0,0);printf_P(PSTR("%4d %3d"), sensorVal, brightness);
+			LCD.setCursor(0,0);printf_P(PSTR("%-4d %-3d"), sensorVal, brightness);
 
 			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
