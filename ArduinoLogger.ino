@@ -30,7 +30,7 @@ static int sensorVal = -1;
 
 #ifdef USE_LCD
 // wire-up the LCD library accordingly
-LiquidCrystal lcd(12, 11, 5, 4, 3, 2);
+LiquidCrystal LCD(12, 11, 5, 4, 3, 2);
 #endif
 
 /**
@@ -229,22 +229,22 @@ void static inline processLcd() {
 
 	switch(state) {
 	case INIT:
-		lcd.setCursor(0,0);
-		lcd.print(F("Datalogger"));
-		lcd.setCursor(0,1);
-		lcd.print(F("Ver: "));
-		lcd.print(F(VERSION));
+		LCD.setCursor(0,0);
+		LCD.print(F("Datalogger"));
+		LCD.setCursor(0,1);
+		LCD.print(F("Ver: "));
+		LCD.print(F(VERSION));
 		state = STARTUP;
 		break;
 
 	case STARTUP:
 		if (millis() > startupTimeout) {
-			lcd.clear();
+			LCD.clear();
 			// init status screen, so we don't always repaint static
 			// data in the UPDATE_LOOP
-			lcd.setCursor(0,1);
+			LCD.setCursor(0,1);
 			//          |0123456789012345|
-			lcd.print(F("Up:"));
+			LCD.print(F("Up:"));
 			state = UPDATE_LOOP;
 		}
 		break;
@@ -264,21 +264,21 @@ void static inline processLcd() {
 			const byte offset1[] = { 0, 5, 10, 15 };
 			const byte length1[] = { 4, 3,  4,  1 };
 
-			lcd.setCursor(offset1[0], 0);lcd.print(stringPad(String(sensorVal ),length1[0]));
-			lcd.setCursor(offset1[1], 0);lcd.print(stringPad(String(brightness),length1[1]));
+			LCD.setCursor(offset1[0], 0);LCD.print(stringPad(String(sensorVal ),length1[0]));
+			LCD.setCursor(offset1[1], 0);LCD.print(stringPad(String(brightness),length1[1]));
 
 			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
 			if (last_eeprom_addr != eeprom_addr) {
-				lcd.setCursor(offset1[2],0);
-				lcd.print(stringPad(String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
+				LCD.setCursor(offset1[2],0);
+				LCD.print(stringPad(String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
 				                    String('%'), length1[2])); // right outmost char left for the animation
 				last_eeprom_addr = eeprom_addr;
 			}
 
-			lcd.setCursor(offset1[3],0); // rightmost char
+			LCD.setCursor(offset1[3],0); // rightmost char
 			// write a "play" glyph if the datalogger is active, else a "pause" glyph
-			lcd.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
+			LCD.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
 
 			// 2. row: display the uptime in seconds
 
@@ -286,7 +286,7 @@ void static inline processLcd() {
 			const byte offset2[] = { 4 };
 			const byte length2[] = { 9 }; // maximum width of a time string is 9 (xxhxxmxxs)
 
-			lcd.setCursor(offset2[0],1); lcd.print(stringPad(getTime(),length2[0]));
+			LCD.setCursor(offset2[0],1); LCD.print(stringPad(getTime(),length2[0]));
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
@@ -314,7 +314,7 @@ String getTime() {
 	}
 
 void static setupLcd() {
-	lcd.begin(16, 2);
+	LCD.begin(16, 2);
 #ifdef LCD_BARS
 	// setup some glyph (5x7) for the vu-meter display
 	byte buf[8];
@@ -322,7 +322,7 @@ void static setupLcd() {
 	for (byte i=0; i<5; i++) {
 		c |= (1 << i);
 		memset(buf,c,sizeof(buf));
-		lcd.createChar(i, buf);
+		LCD.createChar(i, buf);
 	}
 #endif
 	byte glyph[2][8] = {
@@ -345,8 +345,8 @@ void static setupLcd() {
 			B11011,
 		}
 	};
-	lcd.createChar(LCD_GLYPH_PLAY, glyph[0]);
-	lcd.createChar(LCD_GLYPH_PAUSE, glyph[1]);
+	LCD.createChar(LCD_GLYPH_PLAY, glyph[0]);
+	LCD.createChar(LCD_GLYPH_PAUSE, glyph[1]);
 	// one glyph left
 
 }
