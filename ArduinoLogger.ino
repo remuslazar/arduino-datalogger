@@ -2,6 +2,8 @@
 #include "version.h"
 #include <LiquidCrystal.h>
 #include <avr/pgmspace.h>
+#include <Wire.h>
+#include "RTClib.h"
 
 // LDR sensor input pin
 #define SENSOR_PIN A0
@@ -26,6 +28,9 @@ static int brightness = -1; // current brightness value (0..255)
 static int eeprom_addr = 0;
 static bool dataloggerActive = true;
 static int sensorVal = -1;
+
+RTC_DS1307 RTC;
+RTC_Millis clock;
 
 #define USE_LCD
 
@@ -242,10 +247,10 @@ void static inline processLcd() {
 			LCD.clear();
 			// init status screen, so we don't always repaint static
 			// data in the UPDATE_LOOP
-			LCD.setCursor(0,1);
+			//LCD.setCursor(0,1);
 			//          |0123456789012345|
 			//printf_P(PSTR("Up:"));
-			LCD.print(F("Up:"));
+			//LCD.print(F("Up:"));
 			state = UPDATE_LOOP;
 		}
 		break;
@@ -277,8 +282,10 @@ void static inline processLcd() {
 			// 2. row: display the uptime in seconds
 
 			// setup the offsets and lengths for the various values as constants
-			LCD.setCursor(4,1);
-			LCDprintf(F("%-9s"), getTime().c_str());
+			LCD.setCursor(0,1);
+			//LCD.rightToLeft();
+			LCDprintf(F("%-16s"), getTime().c_str());
+			//LCD.leftToRight();
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
@@ -287,22 +294,19 @@ void static inline processLcd() {
 }
 
 String getTime() {
-	uint32_t now = millis()/1000;
-	byte h = now / 3600;
-	byte m = (now-(int)3600*h) / 60;
-	byte s = (now-(int)3600*h) % 60;
-	String ret;
-	if (h>0) {
-		ret += h;
-		ret += 'h';
-	}
-	if (m>0) {
-		ret += m;
-		ret += 'm';
-	}
-	ret += s;
-	ret += 's';
-	return ret;
+	DateTime now = clock.now();
+	char buf[16];
+	// 12.12 12:12:33
+	// 0123456789012345
+	snprintf_P(buf,
+	          sizeof(buf),
+	          PSTR("%d.%d %02d:%02d:%02d"),
+	          now.day(),
+	          now.month(),
+	          now.hour(),
+	          now.minute(),
+	          now.second());
+	return String(buf);
 }
 
 void static setupLcd() {
@@ -350,6 +354,13 @@ void setup() {
 	setupLcd();
 #endif
 	Serial.begin(115200);
+	//RTC.begin();
+	/* if (! RTC.isrunning()) { */
+	/* 	Serial.println("RTC is NOT running!"); */
+	/* 	// following line sets the RTC to the date & time this sketch was compiled */
+	/* 	//RTC.adjust(DateTime(__DATE__, __TIME__)); */
+	/* } */
+	clock.adjust(DateTime(__DATE__, __TIME__) + 20);
 	setupDatalog();
 }
 
