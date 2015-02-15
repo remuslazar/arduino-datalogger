@@ -31,7 +31,7 @@ static int sensorVal = -1;
 
 #ifdef USE_LCD
 // wire-up the LCD library accordingly
-LiquidCrystal LCD(12, 11, 5, 4, 3, 2);
+LiquidCrystal LCD(12, 11, 7, 6, 5, 4);
 void LCDprintf(const __FlashStringHelper *format, ...) {
 	char buf[17]; // 16 chars (one line) buffer for vsnprintf, incl. the trailing zero
 	va_list ap;
