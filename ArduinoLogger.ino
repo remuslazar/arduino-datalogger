@@ -66,14 +66,13 @@ void static inline setupDatalog() {
 		byte val = EEPROM.read(eeprom_addr);
 		if (val == 0xff) return; // 255 => "no value"
 	}
-	// memory full
-	eeprom_addr++; // = 1024
+	// memory full, eeprom_addr = EEPROM_SIZE
 }
 
 void static inline processDatalog() {
 	// begin with the data logging 10 seconds after power-on
 	static uint32_t triggerTimestamp = 10000;
-	const uint32_t period = DATAPOINT_PERIOD * 1000;
+	const uint32_t period = (uint32_t)DATAPOINT_PERIOD * 1000;
 
 	uint32_t ts = millis();
 	if (!dataloggerActive) {
@@ -137,7 +136,7 @@ get:    get datalog"));
 	Serial.println(String(F("Datalogger is ")) + (dataloggerActive ? String(F("active")) : String(F("stopped"))));
 	Serial.println(String(F("Datapoints count: ")) + String(eeprom_addr));
 	Serial.print(F("brightness value: "));Serial.println(brightness);
-	Serial.println(String(F("uptime: ")) + String(millis()));
+	Serial.println(String(F("uptime: ")) + getTime());
 	// call "make version" to update VERSION
 
  end:
@@ -195,8 +194,9 @@ Arduino Datalogger Serial Console\n\
 }
 
 // pad the String (in place) with spaces up to the specified length
+// !this implementation will modify the original String instance
 String static stringPad(String str, int len) {
-	int tail = len - str.length();
+	int8_t tail = len - str.length(); // our strings are <128 chars
 	if (tail < 0) return str.substring(0,len);
 	while (tail-- > 0) str += ' ';
 	return str;
@@ -239,15 +239,12 @@ void static inline processLcd() {
 
 	case STARTUP:
 		if (millis() > startupTimeout) {
+			lcd.clear();
 			// init status screen, so we don't always repaint static
 			// data in the UPDATE_LOOP
-			lcd.setCursor(0,0);
-
-			//          |0123456789012345|
-			lcd.print(F("Mem: -          "));
 			lcd.setCursor(0,1);
 			//          |0123456789012345|
-			lcd.print(F("Vd=?    b=?     "));
+			lcd.print(F("Up:"));
 			state = UPDATE_LOOP;
 		}
 		break;
@@ -255,27 +252,41 @@ void static inline processLcd() {
 	case UPDATE_LOOP:
 		if (millis() > triggerTimestamp) {
 
-			// put the live data on the right place
+			// put the live data on the right place for performance
+			// reasons we don't want to clear the screen prior to the
+			// updates. We just write the data on the right spot on
+			// the LCD and make sure to overwrite the longest posible
+			// width.
 
-			// LCD line 0
+			// 1. row: display Vd raw value, brightness and memory usage
+
+			// setup the offsets and lengths for the various values as constants
+			const byte offset1[] = { 0, 5, 10, 15 };
+			const byte length1[] = { 4, 3,  4,  1 };
+
+			lcd.setCursor(offset1[0], 0);lcd.print(stringPad(String(sensorVal ),length1[0]));
+			lcd.setCursor(offset1[1], 0);lcd.print(stringPad(String(brightness),length1[1]));
+
+			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
 			if (last_eeprom_addr != eeprom_addr) {
-				lcd.setCursor(5,0);
-				lcd.print(stringPad(String(eeprom_addr) + String(F(" (")) +
-				                    String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
-				                    String(F("%)")
-				                           ), 16-5-1)); // right outmost char left for the animation
+				lcd.setCursor(offset1[2],0);
+				lcd.print(stringPad(String((int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5)) +
+				                    String('%'), length1[2])); // right outmost char left for the animation
 				last_eeprom_addr = eeprom_addr;
 			}
-			lcd.setCursor(15,0);
+
+			lcd.setCursor(offset1[3],0); // rightmost char
 			// write a "play" glyph if the datalogger is active, else a "pause" glyph
 			lcd.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
 
-			// LCD line 1
-			lcd.setCursor(3,1);
-			lcd.print(stringPad(String(sensorVal),4));
-			lcd.setCursor(10,1);
-			lcd.print(stringPad(String(brightness),3));
+			// 2. row: display the uptime in seconds
+
+			// setup the offsets and lengths for the various values as constants
+			const byte offset2[] = { 4 };
+			const byte length2[] = { 9 }; // maximum width of a time string is 9 (xxhxxmxxs)
+
+			lcd.setCursor(offset2[0],1); lcd.print(stringPad(getTime(),length2[0]));
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
@@ -283,8 +294,28 @@ void static inline processLcd() {
 	}
 }
 
+String getTime() {
+	uint32_t now = millis()/1000;
+	byte h = now / 3600;
+	byte m = (now-(int)3600*h) / 60;
+	byte s = (now-(int)3600*h) % 60;
+	String ret;
+	if (h>0) {
+		ret += h;
+		ret += 'h';
+	}
+	if (m>0) {
+		ret += m;
+		ret += 'm';
+	}
+	ret += s;
+	ret += 's';
+	return ret;
+	}
+
 void static setupLcd() {
 	lcd.begin(16, 2);
+#ifdef LCD_BARS
 	// setup some glyph (5x7) for the vu-meter display
 	byte buf[8];
 	byte c = 0x00;
@@ -293,6 +324,7 @@ void static setupLcd() {
 		memset(buf,c,sizeof(buf));
 		lcd.createChar(i, buf);
 	}
+#endif
 	byte glyph[2][8] = {
 		{ // play
 			B01000,
