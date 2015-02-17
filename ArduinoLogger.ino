@@ -4,12 +4,10 @@
 #include <avr/pgmspace.h>
 #include <Wire.h>
 #include "RTClib.h"
+#include "Datalogger.h"
 
 // LDR sensor input pin
 #define SENSOR_PIN A0
-
-// EEPROM size
-#define EEPROM_SIZE 1024
 
 // sample rate (in seconds) for the ldr (light sensor)
 #define BRIGHTNESS_SAMPLE_RATE 1
@@ -20,18 +18,14 @@
 // seconds between two datapoints (saved in EEPROM)
 #define DATAPOINT_PERIOD 120
 
-static int brightness = -1; // current brightness value (0..255)
+static uint8_t brightness = 0; // current brightness value (0..255)
 
-// the address of the next free slot in the data buffer. If the memory
-// is full, this will be one = EEPROM_SIZE, which is okay; we do take
-// care of that edge case later in our methods.
-static int eeprom_addr = 0;
-static bool dataloggerActive = true;
 static int sensorVal = -1;
 
 RTC_DS1307 RTC;
 RTC_Millis clock;
 DateTime bootTimestamp;
+Datalogger datalog((uint16_t)DATAPOINT_PERIOD);
 
 #define USE_LCD
 
@@ -87,100 +81,6 @@ void static inline processLightSensor() {
 	}
 }
 
-// search the tail of the datalog buffer (don't overwrite existing
-// data)
-
-void static inline setupDatalog() {
-	for (eeprom_addr = 0; eeprom_addr < EEPROM_SIZE; eeprom_addr++) {
-		byte val = EEPROM.read(eeprom_addr);
-		if (val == 0xff) return; // 255 => "no value"
-	}
-	// memory full, eeprom_addr = EEPROM_SIZE
-}
-
-void static inline processDatalog() {
-
-	// begin with the data logging 10 seconds after power-on
-	const uint32_t initialDelay = (uint32_t)10 * 10000;
-	// interval between 2 recorded datapoints
-	const uint32_t period = (uint32_t)DATAPOINT_PERIOD * 1000;
-
-	typedef enum {
-		INITIAL_DELAY,
-		STOP,
-		STOPPED,
-		START,
-		RUNNING
-	} datalog_state_t;
-
-	static uint32_t triggerTimestamp = 0;
-
-	uint32_t ts = millis();
-	uint32_t now = clock.now().unixtime();
-
-	datalog_state_t static state = INITIAL_DELAY;
-
-	// datalogger state machine
-
-	// the global variable dataloggerActive controls the current state
-	// and can be interpreted as a request to start/stop the
-	// datalogger
-
-	switch (state) {
-	case INITIAL_DELAY: // initial state
-		if (!dataloggerActive) {
-			state = STOPPED;
-			break;
-		}
-
-		if (ts > initialDelay) {
-			state = START;
-		}
-		break;
-
-	case STOP: // stop the datalogger because memory full
-		dataloggerActive = false;
-		state = STOPPED;
-		// fallthrough
-
-	case STOPPED: // datalogger is currently stopped
-		if (dataloggerActive) {
-			state = START;
-			break;
-		}
-		break;
-
-	case START: // start the datalogger now (write timestamp)
-		if (EEPROM_SIZE - eeprom_addr > 4) {
-			byte *p = (byte *)&now;
-			EEPROM.write(eeprom_addr++, 254); // 254: marker for timestamp
-			for (byte i=0; i<4; i++)
-				EEPROM.write(eeprom_addr++, *p++);
-			state = RUNNING;
-			triggerTimestamp = ts; // start now
-		} else state = STOP; // memory full
-		break;
-
-	case RUNNING: // datalogger is running
-		if (!dataloggerActive) {
-			state = STOPPED;
-			break;
-		}
-		if (ts > triggerTimestamp) {
-			if (eeprom_addr < EEPROM_SIZE) {
-				// make sure we don't go beyond the bounds
-				EEPROM.write(eeprom_addr++, brightness);
-				triggerTimestamp += period;
-			} else {
-				// memory full, stop the datalogger
-				state = STOP;
-			}
-		}
-		break;
-
-	}
-}
-
 String getTime(DateTime ts, boolean showYear = false) {
 	char buf[21];
 	// 12.12 12:12:33
@@ -209,6 +109,8 @@ String getTime(DateTime ts, boolean showYear = false) {
 
 void static inline processCommand(String cmd) {
 
+	struct Datapoint first;
+
 	if (cmd == String(F("help"))) {
 		Serial.println(F("\
 help:    this help screen\n\
@@ -234,35 +136,19 @@ get:     get datalog"));
 	} else if (cmd == String(F("status")) || cmd == String("")) {
 		goto status;
 	} else if (cmd == String(F("stop"))) {
-		dataloggerActive = false; // disable the datalogger
+		datalog.stop(); // disable the datalogger
 		goto status;
 	} else if (cmd == String(F("start"))) {
-		dataloggerActive = true; // enable the datalogger
+		datalog.start(); // enable the datalogger
 		goto status;
 	} else if (cmd == String(F("purge"))) {
-		for (int a = 0; a < EEPROM_SIZE; a++) {
-			byte val = EEPROM.read(a);
-			if (val == 255) break;
-			EEPROM.write(a,255);
-		}
-		eeprom_addr = 0;
+		datalog.purge();
 		goto status;
 	} else if (cmd == String(F("get"))) {
-		DateTime dateTime;
-		for (int a = 0; a < EEPROM_SIZE; a++) {
-			byte val = EEPROM.read(a);
-			if (val == 255) break;
-			if (val == 254) {
-				uint32_t ts = 0;
-				byte *p = (byte *)&ts;
-				for (byte i=0; i<4; i++)
-					*p++ = EEPROM.read(++a);
-				dateTime = DateTime(ts);
-				continue;
-			}
-			String data = getTime(dateTime, true) + String(';') + String(val);
-			Serial.println(data);
-			dateTime = dateTime + TimeSpan(DATAPOINT_PERIOD);
+		datalog.getDataInit();
+		while (datalog.getDataHasNext()) {
+			struct Datapoint data = datalog.getDataNext();
+			Serial.println(getTime(DateTime(data.ts), true) + String(';') + String(data.val));
 		}
 	} else {
 		Serial.println(F("Unknown command."));
@@ -271,9 +157,11 @@ get:     get datalog"));
 	goto end;
 
  status:
+	datalog.getDataInit(); first = datalog.getDataNext();
 	Serial.println(String(F("Current DateTime: ")) + getTime(clock.now(),true));
-	Serial.println(String(F("Datalogger status: ")) + (dataloggerActive ? String(F("active")) : String(F("stopped"))));
-	Serial.println(String(F("EEPROM usage: ")) + String(eeprom_addr) + String('/') + String(EEPROM_SIZE));
+	Serial.println(String(F("Datalogger status: ")) + (datalog.isRunning() ? String(F("active")) : String(F("stopped"))));
+	Serial.println(String(F("Oldest Datapoint: ")) + getTime(DateTime(first.ts), true));
+	Serial.println(String(F("EEPROM usage: ")) + String(datalog.getUsedMemory()) + String('/') + String(datalog.getMaxMemory()));
 	Serial.println(String(F("Current Brightness value: ")) + String(brightness));
 	Serial.println(String(F("Uptime: ")) + formatTimespan(clock.now() - bootTimestamp));
 	// call "make version" to update VERSION
@@ -312,7 +200,7 @@ Arduino Datalogger Serial Console\n\
 		processCommand(String(F("help")));
 
 		// disable the datalogger
-		dataloggerActive = false;
+		datalog.stop();
 		isInitialized = true;
 	}
 
@@ -393,14 +281,14 @@ void static inline processLcd() {
 
 			// only update memory usage when needed (minor performance enhancement)
 			static int last_eeprom_addr = -1;
-			if (last_eeprom_addr != eeprom_addr) {
-				LCDprintf(F(" %3d%%"),(int)((float)eeprom_addr*100.0/EEPROM_SIZE+.5));
-				last_eeprom_addr = eeprom_addr;
+			if (last_eeprom_addr != datalog.getUsedMemory()) {
+				LCDprintf(F(" %3d%%"),(int)(100.0 * datalog.getUsedMemory()/datalog.getMaxMemory()+.5));
+				last_eeprom_addr = datalog.getUsedMemory();
 			}
 
 			LCD.setCursor(15,0); // rightmost char
 			// write a "play" glyph if the datalogger is active, else a "pause" glyph
-			LCD.write(dataloggerActive ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
+			LCD.write(datalog.isRunning() ? LCD_GLYPH_PLAY : LCD_GLYPH_PAUSE);
 
 			// 2. row: display the uptime in seconds
 
@@ -461,15 +349,16 @@ void adjustSystemClock() {
 	clock.adjust(RTC.now());
 }
 
-// every 10 minutes do synchronize the system clock from the RTC clock
-// source
+// then a millis() overflow occurred or else every 10 minutes do
+// synchronize the system clock from the RTC clock source
 void static inline processSysclockSync() {
 	const uint32_t period = (uint32_t)10 * 60 * 1000; // every 5 minutes
 
-	static uint32_t triggerTimestamp = period;
-	if (millis() > triggerTimestamp) {
+	static uint32_t lastMillis = 0;
+	if (millis() < lastMillis || // millis overflow
+	    millis() > lastMillis + period) {
 		adjustSystemClock();
-		triggerTimestamp += period;
+		lastMillis = millis();
 	}
 }
 
@@ -487,15 +376,19 @@ void setup() {
 	}
 	adjustSystemClock();
 	bootTimestamp = clock.now();
-	setupDatalog();
+	datalog.begin(&brightness);
 }
 
 void loop() {
+	// make sure that our clock is fine
+	processSysclockSync();
+
+	uint32_t now = clock.now().unixtime();
+
 	processLightSensor();
-	processDatalog();
+	datalog.loop(now);
 	processSerial();
 #ifdef USE_LCD
 	processLcd();
 #endif
-	processSysclockSync();
 }
