@@ -100,51 +100,84 @@ void static inline setupDatalog() {
 
 void static inline processDatalog() {
 
+	// begin with the data logging 10 seconds after power-on
+	const uint32_t initialDelay = (uint32_t)10 * 10000;
+	// interval between 2 recorded datapoints
+	const uint32_t period = (uint32_t)DATAPOINT_PERIOD * 1000;
+
 	typedef enum {
+		INITIAL_DELAY,
+		STOP,
 		STOPPED,
+		START,
 		RUNNING
 	} datalog_state_t;
 
-	datalog_state_t static state = STOPPED;
-
-	// begin with the data logging 10 seconds after power-on
-	static uint32_t triggerTimestamp = 10000;
-	const uint32_t period = (uint32_t)DATAPOINT_PERIOD * 1000;
+	static uint32_t triggerTimestamp = 0;
 
 	uint32_t ts = millis();
-	if (!dataloggerActive) {
+	uint32_t now = clock.now().unixtime();
+
+	datalog_state_t static state = INITIAL_DELAY;
+
+	// datalogger state machine
+
+	// the global variable dataloggerActive controls the current state
+	// and can be interpreted as a request to start/stop the
+	// datalogger
+
+	switch (state) {
+	case INITIAL_DELAY: // initial state
+		if (!dataloggerActive) {
+			state = STOPPED;
+			break;
+		}
+
+		if (ts > initialDelay) {
+			state = START;
+		}
+		break;
+
+	case STOP: // stop the datalogger because memory full
+		dataloggerActive = false;
 		state = STOPPED;
-		triggerTimestamp = ts;
-		// start data logging on next tick when dataloggerActive > true
-		return;
-	}
+		// fallthrough
 
-	if (ts > triggerTimestamp) {
+	case STOPPED: // datalogger is currently stopped
+		if (dataloggerActive) {
+			state = START;
+			break;
+		}
+		break;
 
-		uint32_t now = clock.now().unixtime();
-		switch (state) {
-		case STOPPED:
-			if (EEPROM_SIZE - eeprom_addr > 4) {
-				byte *p = (byte *)&now;
-				EEPROM.write(eeprom_addr++, 254); // 254: marker for timestamp
+	case START: // start the datalogger now (write timestamp)
+		if (EEPROM_SIZE - eeprom_addr > 4) {
+			byte *p = (byte *)&now;
+			EEPROM.write(eeprom_addr++, 254); // 254: marker for timestamp
+			for (byte i=0; i<4; i++)
 				EEPROM.write(eeprom_addr++, *p++);
-				EEPROM.write(eeprom_addr++, *p++);
-				EEPROM.write(eeprom_addr++, *p++);
-				EEPROM.write(eeprom_addr++, *p++);
-			} else dataloggerActive = false; // memory full
 			state = RUNNING;
-			// fallthrough
+			triggerTimestamp = ts; // start now
+		} else state = STOP; // memory full
+		break;
 
-		case RUNNING:
+	case RUNNING: // datalogger is running
+		if (!dataloggerActive) {
+			state = STOPPED;
+			break;
+		}
+		if (ts > triggerTimestamp) {
 			if (eeprom_addr < EEPROM_SIZE) {
 				// make sure we don't go beyond the bounds
 				EEPROM.write(eeprom_addr++, brightness);
 				triggerTimestamp += period;
 			} else {
 				// memory full, stop the datalogger
-				dataloggerActive = false;
+				state = STOP;
 			}
 		}
+		break;
+
 	}
 }
 
@@ -222,10 +255,8 @@ get:     get datalog"));
 			if (val == 254) {
 				uint32_t ts = 0;
 				byte *p = (byte *)&ts;
-				*p++ = EEPROM.read(++a);
-				*p++ = EEPROM.read(++a);
-				*p++ = EEPROM.read(++a);
-				*p++ = EEPROM.read(++a);
+				for (byte i=0; i<4; i++)
+					*p++ = EEPROM.read(++a);
 				dateTime = DateTime(ts);
 				continue;
 			}
