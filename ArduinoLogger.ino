@@ -31,6 +31,7 @@ static int sensorVal = -1;
 
 RTC_DS1307 RTC;
 RTC_Millis clock;
+DateTime bootTimestamp;
 
 #define USE_LCD
 
@@ -48,6 +49,18 @@ void LCDprintf(const __FlashStringHelper *format, ...) {
 	va_end(ap);
 }
 #endif
+
+String formatTimespan(TimeSpan timespan) {
+	char buf[16];
+	snprintf_P(buf,
+	          sizeof(buf),
+	          PSTR("%dd %dh %dm %ds"),
+	          timespan.days(),
+	          timespan.hours(),
+	          timespan.minutes(),
+	          timespan.seconds());
+	return String(buf);
+}
 
 /**
  * Process the data from the LDR sensor and save the smoothed value in
@@ -86,39 +99,105 @@ void static inline setupDatalog() {
 }
 
 void static inline processDatalog() {
+
+	typedef enum {
+		STOPPED,
+		RUNNING
+	} datalog_state_t;
+
+	datalog_state_t static state = STOPPED;
+
 	// begin with the data logging 10 seconds after power-on
 	static uint32_t triggerTimestamp = 10000;
 	const uint32_t period = (uint32_t)DATAPOINT_PERIOD * 1000;
 
 	uint32_t ts = millis();
 	if (!dataloggerActive) {
+		state = STOPPED;
 		triggerTimestamp = ts;
 		// start data logging on next tick when dataloggerActive > true
 		return;
 	}
 
 	if (ts > triggerTimestamp) {
-		if (eeprom_addr < EEPROM_SIZE) {
-			// make sure we don't go beyond the bounds
-			EEPROM.write(eeprom_addr++, brightness);
-			triggerTimestamp += period;
-		} else {
-			// memory full, stop the datalogger
-			dataloggerActive = false;
+
+		uint32_t now = clock.now().unixtime();
+		switch (state) {
+		case STOPPED:
+			if (EEPROM_SIZE - eeprom_addr > 4) {
+				byte *p = (byte *)&now;
+				EEPROM.write(eeprom_addr++, 254); // 254: marker for timestamp
+				EEPROM.write(eeprom_addr++, *p++);
+				EEPROM.write(eeprom_addr++, *p++);
+				EEPROM.write(eeprom_addr++, *p++);
+				EEPROM.write(eeprom_addr++, *p++);
+			} else dataloggerActive = false; // memory full
+			state = RUNNING;
+			// fallthrough
+
+		case RUNNING:
+			if (eeprom_addr < EEPROM_SIZE) {
+				// make sure we don't go beyond the bounds
+				EEPROM.write(eeprom_addr++, brightness);
+				triggerTimestamp += period;
+			} else {
+				// memory full, stop the datalogger
+				dataloggerActive = false;
+			}
 		}
 	}
+}
+
+String getTime(DateTime ts, boolean showYear = false) {
+	char buf[21];
+	// 12.12 12:12:33
+	// 0123456789012345
+	if (showYear)
+		snprintf_P(buf,
+		           sizeof(buf),
+		           PSTR("%d.%d.%d %02d:%02d:%02d"),
+		           ts.day(),
+		           ts.month(),
+		           ts.year(),
+		           ts.hour(),
+		           ts.minute(),
+		           ts.second());
+	else
+		snprintf_P(buf,
+		           sizeof(buf),
+		           PSTR("%d.%d %02d:%02d:%02d"),
+		           ts.day(),
+		           ts.month(),
+		           ts.hour(),
+		           ts.minute(),
+		           ts.second());
+	return String(buf);
 }
 
 void static inline processCommand(String cmd) {
 
 	if (cmd == String(F("help"))) {
 		Serial.println(F("\
-help:   this help screen\n\
-stop:   stop the datalogger\n\
-start:  (re)start the datalogger\n\
-status: show status infos and uptime in milliseconds\n\
-purge : purge all data in EEPROM\n\
-get:    get datalog"));
+help:    this help screen\n\
+settime: set the RTC (Format: 2015-02-16 12:34:56)\n\
+stop:    stop the datalogger\n\
+start:   (re)start the datalogger\n\
+status:  show status infos and uptime in milliseconds\n\
+purge:   purge all data in EEPROM\n\
+get:     get datalog"));
+	} else if (cmd.startsWith(String(F("settime ")))) {
+		String param = cmd.substring(cmd.indexOf(' ')+1);
+		if (param.length() > 0) {
+			int y,m,d,H,M,S;
+			if (sscanf_P(param.c_str(),
+			             PSTR("%4d-%2d-%4d%2d:%2d:%2d"),
+			             &y, &m, &d, &H, &M, &S)) {
+				RTC.adjust(DateTime(y,m,d,H,M,S));
+				adjustSystemClock();
+			}
+			else
+				Serial.println(F("parse error"));
+		} else goto end;
 	} else if (cmd == String(F("status")) || cmd == String("")) {
 		goto status;
 	} else if (cmd == String(F("stop"))) {
@@ -136,11 +215,23 @@ get:    get datalog"));
 		eeprom_addr = 0;
 		goto status;
 	} else if (cmd == String(F("get"))) {
+		DateTime dateTime;
 		for (int a = 0; a < EEPROM_SIZE; a++) {
 			byte val = EEPROM.read(a);
 			if (val == 255) break;
-			String data = String(a) + String(';') + String(val);
+			if (val == 254) {
+				uint32_t ts = 0;
+				byte *p = (byte *)&ts;
+				*p++ = EEPROM.read(++a);
+				*p++ = EEPROM.read(++a);
+				*p++ = EEPROM.read(++a);
+				*p++ = EEPROM.read(++a);
+				dateTime = DateTime(ts);
+				continue;
+			}
+			String data = getTime(dateTime, true) + String(';') + String(val);
 			Serial.println(data);
+			dateTime = dateTime + TimeSpan(DATAPOINT_PERIOD);
 		}
 	} else {
 		Serial.println(F("Unknown command."));
@@ -149,10 +240,11 @@ get:    get datalog"));
 	goto end;
 
  status:
-	Serial.println(String(F("Datalogger is ")) + (dataloggerActive ? String(F("active")) : String(F("stopped"))));
-	Serial.println(String(F("Datapoints count: ")) + String(eeprom_addr));
-	Serial.println(String(F("brightness value: ")) + String(brightness));
-	Serial.println(String(F("uptime: ")) + getTime());
+	Serial.println(String(F("Current DateTime: ")) + getTime(clock.now(),true));
+	Serial.println(String(F("Datalogger status: ")) + (dataloggerActive ? String(F("active")) : String(F("stopped"))));
+	Serial.println(String(F("EEPROM usage: ")) + String(eeprom_addr) + String('/') + String(EEPROM_SIZE));
+	Serial.println(String(F("Current Brightness value: ")) + String(brightness));
+	Serial.println(String(F("Uptime: ")) + formatTimespan(clock.now() - bootTimestamp));
 	// call "make version" to update VERSION
 
  end:
@@ -284,29 +376,13 @@ void static inline processLcd() {
 			// setup the offsets and lengths for the various values as constants
 			LCD.setCursor(0,1);
 			//LCD.rightToLeft();
-			LCDprintf(F("%-16s"), getTime().c_str());
+			LCDprintf(F("%-16s"), getTime(clock.now()).c_str());
 			//LCD.leftToRight();
 
 			triggerTimestamp = millis() + refreshPeriod;
 		}
 		break;
 	}
-}
-
-String getTime() {
-	DateTime now = clock.now();
-	char buf[16];
-	// 12.12 12:12:33
-	// 0123456789012345
-	snprintf_P(buf,
-	          sizeof(buf),
-	          PSTR("%d.%d %02d:%02d:%02d"),
-	          now.day(),
-	          now.month(),
-	          now.hour(),
-	          now.minute(),
-	          now.second());
-	return String(buf);
 }
 
 void static setupLcd() {
@@ -349,18 +425,37 @@ void static setupLcd() {
 }
 #endif
 
+// synchronize the system clock (RTC_Millis) to the RTC chip
+void adjustSystemClock() {
+	clock.adjust(RTC.now());
+}
+
+// every 10 minutes do synchronize the system clock from the RTC clock
+// source
+void static inline processSysclockSync() {
+	const uint32_t period = (uint32_t)10 * 60 * 1000; // every 5 minutes
+
+	static uint32_t triggerTimestamp = period;
+	if (millis() > triggerTimestamp) {
+		adjustSystemClock();
+		triggerTimestamp += period;
+	}
+}
+
 void setup() {
 #ifdef USE_LCD
 	setupLcd();
 #endif
 	Serial.begin(115200);
-	//RTC.begin();
-	/* if (! RTC.isrunning()) { */
-	/* 	Serial.println("RTC is NOT running!"); */
-	/* 	// following line sets the RTC to the date & time this sketch was compiled */
-	/* 	//RTC.adjust(DateTime(__DATE__, __TIME__)); */
-	/* } */
-	clock.adjust(DateTime(__DATE__, __TIME__) + 20);
+	Wire.begin();
+	RTC.begin();
+	if (! RTC.isrunning()) {
+		// following line sets the RTC to the date & time this sketch was compiled
+		//RTC.adjust(DateTime(__DATE__, __TIME__));
+		RTC.adjust(DateTime(__DATE__, __TIME__)+2);
+	}
+	adjustSystemClock();
+	bootTimestamp = clock.now();
 	setupDatalog();
 }
 
@@ -371,4 +466,5 @@ void loop() {
 #ifdef USE_LCD
 	processLcd();
 #endif
+	processSysclockSync();
 }
