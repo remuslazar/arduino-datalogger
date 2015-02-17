@@ -124,14 +124,20 @@ get:     get datalog"));
 		String param = cmd.substring(cmd.indexOf(' ')+1);
 		if (param.length() > 0) {
 			int y,m,d,H,M,S;
-			if (sscanf_P(param.c_str(),
+			if (param.length() > 8 && sscanf_P(param.c_str(),
 			             PSTR("%4d-%2d-%4d%2d:%2d:%2d"),
 			             &y, &m, &d, &H, &M, &S)) {
 				RTC.adjust(DateTime(y,m,d,H,M,S));
 				adjustSystemClock();
-			}
-			else
-				Serial.println(F("parse error"));
+			} else if (sscanf_P(param.c_str(),
+			                    PSTR("2d:%2d:%2d"),
+			                    &H, &M, &S)) {
+				DateTime now = RTC.now();
+				RTC.adjust(DateTime(now.year(),
+				                    now.month(),
+				                    now.day(),H,M,S));
+				adjustSystemClock();
+			} else Serial.println(F("parse error"));
 		} else goto end;
 	} else if (cmd == String(F("status")) || cmd == String("")) {
 		goto status;
