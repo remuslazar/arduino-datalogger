@@ -1,7 +1,6 @@
-#include <EEPROM.h>
+#include "Arduino.h"
 #include "version.h"
 #include <LiquidCrystal.h>
-#include <avr/pgmspace.h>
 #include <Wire.h>
 #include "RTClib.h"
 #include "Datalogger.h"
@@ -61,7 +60,8 @@ String formatTimespan(TimeSpan timespan) {
  * the global variable brightness.
  */
 
-void static inline processLightSensor() {
+void inline processLightSensor() {
+	const int led = LED_BUILTIN;
 	const int sampleRate = BRIGHTNESS_SAMPLE_RATE * 1000; // sample freq := 1/sampleRate
 	const float smoothSamplesNum = BRIGHTNESS_SAMPLES_NUM;
 
@@ -107,7 +107,7 @@ String getTime(DateTime ts, boolean showYear = false) {
 	return String(buf);
 }
 
-void static inline processCommand(String cmd) {
+void inline processCommand(String cmd) {
 
 	struct Datapoint first;
 
@@ -183,7 +183,7 @@ get:     get datalog"));
  * dispatch to processCommand()
  */
 
-void static inline processSerial() {
+void inline processSerial() {
 
 	typedef enum {
 		INIT,
@@ -238,7 +238,7 @@ Arduino Datalogger Serial Console\n\
  * periodically
  */
 
-void static inline processLcd() {
+void inline processLcd() {
 	typedef enum {
 		INIT,
 		STARTUP,
@@ -310,7 +310,7 @@ void static inline processLcd() {
 	}
 }
 
-void static setupLcd() {
+void inline setupLcd() {
 	LCD.begin(16, 2);
 
 #ifdef LCD_BARS
@@ -357,7 +357,7 @@ void adjustSystemClock() {
 
 // then a millis() overflow occurred or else every 10 minutes do
 // synchronize the system clock from the RTC clock source
-void static inline processSysclockSync() {
+void inline processSysclockSync() {
 	const uint32_t period = (uint32_t)10 * 60 * 1000; // every 5 minutes
 
 	static uint32_t lastMillis = 0;

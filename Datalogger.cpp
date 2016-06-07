@@ -1,3 +1,4 @@
+#include "Arduino.h"
 #include "DataLogger.h"
 
 Datalogger::Datalogger(uint16_t period) {
